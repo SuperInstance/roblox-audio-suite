@@ -1,0 +1,13 @@
+{
+  "name": "RobloxAudioSuite",
+  "globIgnorePaths": [
+    "**/package.json",
+    "**/tsconfig.json"
+  ],
+  "tree": {
+    "$className": "ReplicatedStorage",
+    "AudioSuite": {
+      "$path": "src"
+    }
+  }
+}
