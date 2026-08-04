@@ -1,8 +1,8 @@
 --[[
     Audio Suite Test Suite
-    ──────────────────────
+    ──────────────────────────────
     Tests for API surface, nil-sound-ID guards, cleanup correctness,
-    layer z-ordering, and config validation.
+    layer z-ordering, config validation, edge cases, and nil inputs.
 
     Run with TestEZ or similar Roblox test runner.
 ]]
@@ -48,16 +48,25 @@ return function()
         it("setIntensity clamps to [0, 1]", function()
             AudioManager.setIntensity(-5)
             expect(AudioManager.getIntensity()).to.equal(0)
-
             AudioManager.setIntensity(0.5)
             expect(AudioManager.getIntensity()).to.equal(0.5)
-
             AudioManager.setIntensity(99)
             expect(AudioManager.getIntensity()).to.equal(1)
         end)
 
+        it("setIntensity clamps very large negative to 0", function()
+            AudioManager.setIntensity(-999999)
+            expect(AudioManager.getIntensity()).to.equal(0)
+        end)
+
+        it("setIntensity handles exactly 0 and exactly 1", function()
+            AudioManager.setIntensity(0)
+            expect(AudioManager.getIntensity()).to.equal(0)
+            AudioManager.setIntensity(1)
+            expect(AudioManager.getIntensity()).to.equal(1)
+        end)
+
         it("getMusicMode is nil before any music is set", function()
-            -- Music mode should be nil or "none" initially
             local mode = AudioManager.getMusicMode()
             expect(mode).never.to.be.ok()
         end)
@@ -116,6 +125,29 @@ return function()
             expect(AmbientLayer.lerp(0, 10, 0)).to.equal(0)
             expect(AmbientLayer.lerp(0, 10, 1)).to.equal(10)
         end)
+
+        it("lerp handles negative values", function()
+            expect(AmbientLayer.lerp(-10, 10, 0.5)).to.equal(0)
+        end)
+
+        it("lerp handles identical start/end", function()
+            expect(AmbientLayer.lerp(42, 42, 0.5)).to.equal(42)
+        end)
+
+        it("lerp clamps t > 1 correctly", function()
+            local result = AmbientLayer.lerp(0, 10, 1.5)
+            expect(result).to.equal(15)
+        end)
+
+        it("lerp clamps t < 0 correctly", function()
+            local result = AmbientLayer.lerp(0, 10, -0.5)
+            expect(result).to.equal(-5)
+        end)
+
+        it("lerp handles very large numbers", function()
+            local result = AmbientLayer.lerp(0, 1e15, 0.5)
+            expect(result).to.equal(5e14)
+        end)
     end)
 
     -- ── EnvironmentAudio Tests ────────────────────────────────
@@ -146,6 +178,19 @@ return function()
                 expect(id:match("^rbxassetid://%d+$")).to.be.ok()
             end
         end)
+
+        it("config has volume settings as numbers", function()
+            expect(type(EnvironmentAudio.config.baseVolume)).to.equal("number")
+            expect(type(EnvironmentAudio.config.stormVolume)).to.equal("number")
+            expect(type(EnvironmentAudio.config.windBaseVol)).to.equal("number")
+        end)
+
+        it("config volumes are in valid range [0, 1]", function()
+            expect(EnvironmentAudio.config.baseVolume).to.be.at.least(0)
+            expect(EnvironmentAudio.config.baseVolume).to.be.at.most(1)
+            expect(EnvironmentAudio.config.stormVolume).to.be.at.least(0)
+            expect(EnvironmentAudio.config.stormVolume).to.be.at.most(1)
+        end)
     end)
 
     -- ── WildlifeAudio Tests ───────────────────────────────────
@@ -172,6 +217,32 @@ return function()
                 expect(type(def.nightChance)).to.equal("number")
                 expect(type(def.pitchRange)).to.equal("table")
                 expect(#def.pitchRange).to.equal(2)
+            end
+        end)
+
+        it("creature volumes are in valid range", function()
+            for name, def in pairs(WildlifeAudio.config.creatures) do
+                expect(def.volume).to.be.at.least(0)
+                expect(def.volume).to.be.at.most(1)
+            end
+        end)
+
+        it("creature pitch ranges have min < max", function()
+            for name, def in pairs(WildlifeAudio.config.creatures) do
+                expect(def.pitchRange[1]).to.be.at.most(def.pitchRange[2])
+            end
+        end)
+
+        it("creature dayChance is in [0, 1]", function()
+            for name, def in pairs(WildlifeAudio.config.creatures) do
+                expect(def.dayChance).to.be.at.least(0)
+                expect(def.dayChance).to.be.at.most(1)
+            end
+        end)
+
+        it("all creature asset IDs are valid rbxassetid format", function()
+            for name, def in pairs(WildlifeAudio.config.creatures) do
+                expect(def.assetId:match("^rbxassetid://%d+$")).to.be.ok()
             end
         end)
 
@@ -211,6 +282,35 @@ return function()
             end
         end)
 
+        it("all sound IDs are valid rbxassetid format", function()
+            for name, cfg in pairs(UIAudio.config.sounds) do
+                expect(cfg.soundId:match("^rbxassetid://%d+$")).to.be.ok()
+            end
+        end)
+
+        it("sound volumes are in valid range", function()
+            for name, cfg in pairs(UIAudio.config.sounds) do
+                expect(cfg.volume).to.be.at.least(0)
+                expect(cfg.volume).to.be.at.most(1)
+            end
+        end)
+
+        it("sound durations are positive", function()
+            for name, cfg in pairs(UIAudio.config.sounds) do
+                expect(cfg.duration).to.be.greaterThan(0)
+            end
+        end)
+
+        it("alarm and warning are looping sounds", function()
+            expect(UIAudio.config.sounds.alarm.loop).to.equal(true)
+            expect(UIAudio.config.sounds.warning.loop).to.equal(true)
+        end)
+
+        it("click and confirm are non-looping sounds", function()
+            expect(UIAudio.config.sounds.click.loop).to.equal(false)
+            expect(UIAudio.config.sounds.confirm.loop).to.equal(false)
+        end)
+
         it("has play, stop, stopAll, registerSound methods", function()
             expect(UIAudio.play).to.be.a("function")
             expect(UIAudio.stop).to.be.a("function")
@@ -225,10 +325,20 @@ return function()
 
     describe("nil sound ID safety", function()
         it("playSfx with nil soundId should not crash", function()
-            -- AudioManager.playSfx wraps in Sound creation; nil SoundId
-            -- creates a Sound that won't play but shouldn't crash
             expect(function()
                 AudioManager.playSfx({ soundId = "", volume = 0 })
+            end).never.to.throw()
+        end)
+
+        it("playSfx with empty table should not crash", function()
+            expect(function()
+                AudioManager.playSfx({})
+            end).never.to.throw()
+        end)
+
+        it("playSfx with nil argument should not crash", function()
+            expect(function()
+                AudioManager.playSfx(nil)
             end).never.to.throw()
         end)
 
@@ -237,6 +347,51 @@ return function()
             MusicDirector.registerMood("empty", {})
             expect(function()
                 MusicDirector.transitionTo("empty", 0.1)
+            end).never.to.throw()
+        end)
+
+        it("MusicDirector transitionTo with nil mood does not crash", function()
+            MusicDirector.init()
+            expect(function()
+                MusicDirector.transitionTo(nil, 0.1)
+            end).never.to.throw()
+        end)
+
+        it("MusicDirector transitionTo with unknown mood does not crash", function()
+            MusicDirector.init()
+            expect(function()
+                MusicDirector.transitionTo("unknown_mood_xyz", 0.1)
+            end).never.to.throw()
+        end)
+    end)
+
+    -- ── Edge Cases ────────────────────────────────────────────
+
+    describe("edge cases", function()
+        it("setIntensity with NaN-like value (nil) does not crash", function()
+            expect(function()
+                AudioManager.setIntensity(nil)
+            end).never.to.throw()
+        end)
+
+        it("duckMusic with extreme factor does not crash", function()
+            expect(function()
+                AudioManager.duckMusic(0)
+                AudioManager.duckMusic(1)
+            end).never.to.throw()
+        end)
+
+        it("MusicDirector setFadeTime with zero does not crash", function()
+            MusicDirector.init()
+            expect(function()
+                MusicDirector.setFadeTime(0)
+            end).never.to.throw()
+        end)
+
+        it("MusicDirector setFadeTime with negative does not crash", function()
+            MusicDirector.init()
+            expect(function()
+                MusicDirector.setFadeTime(-5)
             end).never.to.throw()
         end)
     end)
